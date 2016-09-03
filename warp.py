@@ -37,10 +37,24 @@ def remove_duplicates(cmp_ext, rm_ext, directory):
 
 
 def main():
-    if len(sys.args) < 1:
-        pass
+    if len(sys.argv) < 2:
+        print('[x] Nothing to do')
+        sys.exit(0)
     else:
-        pass
+        recursive = False
+
+        for i in range(1, len(sys.argv)):
+            if sys.argv[i] == '-d':
+                directory = sys.argv[i+1]
+            if sys.argv[i] == '-c':
+                cmp_ext = sys.argv[i+1]
+            if sys.argv[i] == '-r':
+                rm_ext = sys.argv[i+1]
+            if sys.argv[i] == '-R':
+                recursive = True
+
+
+    print(sys.argv)
 
 if __name__ == '__main__':
     main()
