@@ -19,7 +19,6 @@ def create_map(directory):
     for i in range(0, len(dir_list)):
         kv_pair = re.split(r'\.', dir_list[i])
 
-        # Always create a list
         if len(kv_pair) == 2:
             if kv_pair[0] == '':
                 if None not in file_map:
@@ -29,7 +28,6 @@ def create_map(directory):
                 if kv_pair[0] not in file_map:
                     file_map[kv_pair[0]] = []
                 file_map[kv_pair[0]].append(kv_pair[1])
-        #TODO: Still Unhandled
         elif len(kv_pair) > 2:
             s = kv_pair[0] + '.'
 
@@ -48,7 +46,8 @@ def create_map(directory):
                 file_map[kv_pair[0]] = []
             file_map[kv_pair[0]].append(None)
         else:
-            pass
+            print('[!] Unhandled file type')
+            sys.exit(1)
 
     return file_map
 
