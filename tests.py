@@ -3,7 +3,7 @@ import shutil
 import sys
 import unittest
 
-import warp
+import warp_rm
 
 class WarpTests(unittest.TestCase):
     def setUp(self):
@@ -24,7 +24,7 @@ class WarpTests(unittest.TestCase):
         shutil.rmtree('autotests')
 
     def test_create_map_io(self):
-        warp_map = warp.create_map(self.directory)
+        warp_map = warp_rm.create_map(self.directory)
         print(warp_map)
 
         for k, v in warp_map.items():
