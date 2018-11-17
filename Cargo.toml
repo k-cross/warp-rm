@@ -1,0 +1,7 @@
+[package]
+name = "warp-utils"
+version = "0.1.0"
+authors = ["Ken Cross"]
+
+[dependencies]
+glob = "0.2.11"
