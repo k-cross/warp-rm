@@ -1,7 +1,10 @@
 [package]
-name = "warp-utils"
+name = "wrm"
+description = "Warp Utilities - Remove"
 version = "0.1.0"
-authors = ["Ken Cross"]
+authors = ["Kenneth Cross <ken.q.cross@gmail.com>"]
+edition = "2018"
 
 [dependencies]
-glob = "0.2.11"
+clap = "2.33.3"
+glob = "0.3.0"

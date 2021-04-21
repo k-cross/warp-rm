@@ -3,8 +3,21 @@
 A series of high level utilities that perform functions you might generally use scripts for.
 It is meant to make certain types of operations easy to perform.
 
-## Warp Removal
+## Warp Remove
 
-A file removal utility that provides a way to remove files with the same name but different extension formats.
-This is particularly useful for cleaning up photos, since `.jpg` is a very fast format to load and view while `raw` files are very slow.
-This makes viewing initial files very easy, and deleting a `jpeg` on the first pass one could use this utility remove all the `raw` files without a matching `jpeg`.
+A file utility that removes files with the same name but different extensions.
+As an example:
+
+```
+> ls ./
+f1.jpg f1.raw f2.cr2 f3.txt
+> wrm -t raw cr2 -s jpg jpeg png
+> ls ./
+f1.jpg f1.raw f3.txt
+```
+
+The `f2.cr2` file ended up getting removed.
+This will remove any `.raw` or `.cr2` file that does not have a corresponding `.jpg`, `.jpeg`, or `.png` file of the same name.
+
+For my use case, it's useful for cleaning up undesirable photos after manually reviewing photos.
+It can be for any filetype though, I have run into this problem when documenting results in experiments and keeping all the different files that document specimen or experiment under the same name is common.
