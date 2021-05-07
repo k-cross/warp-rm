@@ -6,5 +6,4 @@ authors = ["Kenneth Cross <ken.q.cross@gmail.com>"]
 edition = "2018"
 
 [dependencies]
-clap = "2.33.3"
-glob = "0.3.0"
+clap = "2.33"
