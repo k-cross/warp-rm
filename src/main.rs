@@ -1,17 +1,15 @@
 extern crate clap;
 
 use clap::{App, Arg, ArgMatches};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 fn main() {
     // Dear reader, if you can make this prettier, I'd like to hear about it.
     let help_sensitive = "Makes the extension list in both targets and sources case sensitive.
-As an example:
-`wrm -t raw cr2 -s jpeg jpg`
-
-This will remove `RAW`, `raw`, `Cr2` and all other combinations.
-Sources will match on combinations like `JpEg`.
+As an example with targets `raw cr2` and sources `jpeg jpg`,
+this will remove `RAW`, `raw`, `Cr2` and all other combinations.
+Sources will match on all combinations too.
 ";
 
     let help_and_sources = "Instead of applying an `or` match on sources, apply an `and` match.
@@ -90,25 +88,21 @@ then any `raw`, `csv`, `jpg`, `gif`, or `exe` will be deleted.
         .get_matches();
 
     let file_map = build_file_map(matches);
+    let targets = matches.values_of("target_ext").unwrap();
+    let sources = matches.values_of("source_ext").unwrap();
+
+    //remove_files(file_map, targets, sources);
 }
 
-fn build_file_map(matches: ArgMatches) -> HashMap<String, Vec<String>> {
-    if let (Some(targets), Some(sources)) = (
-        matches.values_of("target_ext"),
-        matches.values_of("source_ext"),
-    ) {
-        for m in targets {
-            println!("targets {}\n", m);
-        }
-        for m in sources {
-            println!("sources {}\n", m);
-        }
-    }
+//fn remove_files(file_map: &HashMap<String, HashSet<String>>, targets, sources) {
+//
+//}
 
+fn build_file_map(matches: ArgMatches) -> HashMap<String, HashSet<String>> {
     // TODO: add multiple target paths later
     let target_path = Path::new(matches.value_of("target_paths").unwrap());
     let file_list = get_files(target_path, matches.is_present("recursive"));
-    let mut file_table: HashMap<String, Vec<String>> = HashMap::new();
+    let mut file_table: HashMap<String, HashSet<String>> = HashMap::new();
 
     for file in file_list {
         match file.parent() {
@@ -131,8 +125,8 @@ fn construct_key_value<'a>(
     file: &'a Path,
     stem: &'a str,
     parent: &'a str,
-    file_table: &'a mut HashMap<String, Vec<String>>,
-) -> &'a mut HashMap<String, Vec<String>> {
+    file_table: &'a mut HashMap<String, HashSet<String>>,
+) -> &'a mut HashMap<String, HashSet<String>> {
     // clean up to just referenece String directly
     let mut path_stem = String::from(parent);
     path_stem.push('/');
@@ -146,12 +140,12 @@ fn construct_key_value<'a>(
 }
 
 fn insert_file_table<'a>(
-    file_table: &'a mut HashMap<String, Vec<String>>,
+    file_table: &'a mut HashMap<String, HashSet<String>>,
     path: String,
     ext: &'a str,
-) -> &'a mut HashMap<String, Vec<String>> {
-    let exts = file_table.entry(path).or_insert(Vec::new());
-    exts.push(String::from(ext));
+) -> &'a mut HashMap<String, HashSet<String>> {
+    let exts = file_table.entry(path).or_insert(HashSet::new());
+    exts.insert(String::from(ext));
 
     file_table
 }
@@ -181,5 +175,9 @@ fn get_files<'a>(p: &'a Path, recurse: bool) -> Vec<PathBuf> {
 #[cfg(test)]
 mod test {
     #[test]
-    fn basics() {}
+    fn map_generation() {
+        // create tmp directory
+        // create tmp files
+        // test that map gets built properly with all files
+    }
 }
