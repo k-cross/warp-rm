@@ -2,6 +2,7 @@ extern crate clap;
 
 use clap::{App, Arg, ArgMatches};
 use std::collections::{HashMap, HashSet};
+use std::fs;
 use std::path::{Path, PathBuf};
 
 fn main() {
@@ -87,18 +88,72 @@ then any `raw`, `csv`, `jpg`, `gif`, or `exe` will be deleted.
         )
         .get_matches();
 
-    let file_map = build_file_map(matches);
-    let targets = matches.values_of("target_ext").unwrap();
-    let sources = matches.values_of("source_ext").unwrap();
+    let targets: HashSet<String> = matches
+        .values_of("target_ext")
+        .unwrap()
+        .map(|x| String::from(x))
+        .collect();
+    let sources: HashSet<String> = matches
+        .values_of("source_ext")
+        .unwrap()
+        .map(|x| String::from(x))
+        .collect();
+    let file_map = build_file_map(&matches);
 
-    //remove_files(file_map, targets, sources);
+    if matches.is_present("and_source_matches") {
+        //remove_files_and(&file_map, &targets, &sources);
+        println!("not implemented");
+    } else {
+        remove_files_or(&file_map, &targets, &sources);
+    }
 }
 
-//fn remove_files(file_map: &HashMap<String, HashSet<String>>, targets, sources) {
-//
-//}
+fn remove_files_or(
+    file_map: &HashMap<String, HashSet<String>>,
+    targets: &HashSet<String>,
+    sources: &HashSet<String>,
+) {
+    for (path_stem, exts) in file_map {
+        let mut s = String::from(path_stem);
 
-fn build_file_map(matches: ArgMatches) -> HashMap<String, HashSet<String>> {
+        if check_removal_or(&exts, &sources) {
+            let existing_exts: HashSet<String> = targets
+                .union(sources)
+                .map(|x| String::from(x))
+                .collect::<HashSet<String>>()
+                .intersection(&exts)
+                .map(|x| String::from(x))
+                .collect::<HashSet<String>>();
+
+            for ext in existing_exts {
+                let full_path = if ext.is_empty() {
+                    Path::new(s.as_str())
+                } else {
+                    s.push('.');
+                    s.push_str(ext.as_str());
+                    Path::new(s.as_str())
+                };
+
+                fs::remove_file(full_path).expect("failed to delete file");
+            }
+        }
+    }
+}
+
+fn check_removal_or(exts: &HashSet<String>, sources: &HashSet<String>) -> bool {
+    let mut result = true;
+
+    for ext in sources {
+        if exts.contains(ext) {
+            result = false;
+            break;
+        }
+    }
+
+    result
+}
+
+fn build_file_map<'a>(matches: &'a ArgMatches) -> HashMap<String, HashSet<String>> {
     // TODO: add multiple target paths later
     let target_path = Path::new(matches.value_of("target_paths").unwrap());
     let file_list = get_files(target_path, matches.is_present("recursive"));
@@ -117,7 +172,7 @@ fn build_file_map(matches: ArgMatches) -> HashMap<String, HashSet<String>> {
         }
     }
 
-    println!("File Table: {:?}", file_table);
+    dbg!(&file_table);
     file_table
 }
 
@@ -174,10 +229,29 @@ fn get_files<'a>(p: &'a Path, recurse: bool) -> Vec<PathBuf> {
 
 #[cfg(test)]
 mod test {
+    use std::collections::{HashMap, HashSet};
+    use std::fs;
+
     #[test]
     fn map_generation() {
         // create tmp directory
+        let p = "/tmp/warp_tests";
+        fs::create_dir_all(p).expect("couldn't create directory");
+
         // create tmp files
+        let f_set = [
+            "/tmp/warp_tests/file1.txt",
+            "/tmp/warp_tests/file1.csv",
+            "/tmp/warp_tests/file1.html",
+            "/tmp/warp_tests/file1.tex",
+            "/tmp/warp_tests/file2.txt",
+            "/tmp/warp_tests/file3.csv",
+            "/tmp/warp_tests/file3.tex",
+        ]
+        .iter()
+        .map(|x| x.to_string())
+        .collect::<HashSet<String>>();
+
         // test that map gets built properly with all files
     }
 }
