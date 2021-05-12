@@ -1,9 +1,18 @@
 extern crate clap;
 
-use clap::{App, Arg, ArgMatches};
+use clap::{App, Arg};
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
+
+#[derive(Hash, Eq, PartialEq)]
+enum WarpFlag {
+    Recursive,
+    CaseSensitive,
+    EmptySource,
+    EmptyTarget,
+    AndSource,
+}
 
 fn main() {
     // Dear reader, if you can make this prettier, I'd like to hear about it.
@@ -31,8 +40,7 @@ then any `raw`, `csv`, `jpg`, `gif`, or `exe` will be deleted.
         // positional
         .arg(
             Arg::with_name("target_paths")
-                // TODO: add multiple later
-                .multiple(false)
+                .multiple(true)
                 .required(true)
                 .help("Specify the directory paths to scan"),
         )
@@ -88,6 +96,7 @@ then any `raw`, `csv`, `jpg`, `gif`, or `exe` will be deleted.
         )
         .get_matches();
 
+    let mut warp_flags: HashSet<WarpFlag> = HashSet::new();
     let targets: HashSet<String> = matches
         .values_of("target_ext")
         .unwrap()
@@ -98,9 +107,31 @@ then any `raw`, `csv`, `jpg`, `gif`, or `exe` will be deleted.
         .unwrap()
         .map(|x| String::from(x))
         .collect();
-    let file_map = build_file_map(&matches);
+    let target_paths: Vec<String> = matches
+        .values_of("target_paths")
+        .unwrap()
+        .map(|x| String::from(x))
+        .collect();
 
     if matches.is_present("and_source_matches") {
+        warp_flags.insert(WarpFlag::AndSource);
+    }
+    if matches.is_present("recursive") {
+        warp_flags.insert(WarpFlag::Recursive);
+    }
+    if matches.is_present("case_sensitive") {
+        warp_flags.insert(WarpFlag::CaseSensitive);
+    }
+    if matches.is_present("empty_source_ext") {
+        warp_flags.insert(WarpFlag::EmptySource);
+    }
+    if matches.is_present("empty_target_ext") {
+        warp_flags.insert(WarpFlag::EmptyTarget);
+    }
+
+    let file_map = build_file_map(&target_paths, &warp_flags);
+
+    if warp_flags.contains(&WarpFlag::AndSource) {
         //remove_files_and(&file_map, &targets, &sources);
         println!("not implemented");
     } else {
@@ -153,10 +184,12 @@ fn check_removal_or(exts: &HashSet<String>, sources: &HashSet<String>) -> bool {
     result
 }
 
-fn build_file_map<'a>(matches: &'a ArgMatches) -> HashMap<String, HashSet<String>> {
+fn build_file_map<'a>(
+    target_paths: &'a Vec<String>,
+    warp_flags: &'a HashSet<WarpFlag>,
+) -> HashMap<String, HashSet<String>> {
     // TODO: add multiple target paths later
-    let target_path = Path::new(matches.value_of("target_paths").unwrap());
-    let file_list = get_files(target_path, matches.is_present("recursive"));
+    let file_list = get_files(&target_paths, warp_flags.contains(&WarpFlag::Recursive));
     let mut file_table: HashMap<String, HashSet<String>> = HashMap::new();
 
     for file in file_list {
@@ -172,7 +205,6 @@ fn build_file_map<'a>(matches: &'a ArgMatches) -> HashMap<String, HashSet<String
         }
     }
 
-    dbg!(&file_table);
     file_table
 }
 
@@ -205,7 +237,18 @@ fn insert_file_table<'a>(
     file_table
 }
 
-fn get_files<'a>(p: &'a Path, recurse: bool) -> Vec<PathBuf> {
+fn get_files<'a>(v: &'a Vec<String>, recurse: bool) -> Vec<PathBuf> {
+    let mut file_list: Vec<PathBuf> = Vec::new();
+
+    for s in v {
+        let mut temp_list = retrieve_files(&mut PathBuf::from(s), &recurse);
+        file_list.append(&mut temp_list)
+    }
+
+    file_list
+}
+
+fn retrieve_files<'a>(p: &PathBuf, recurse: &bool) -> Vec<PathBuf> {
     let mut file_list: Vec<PathBuf> = Vec::new();
 
     for file in p.read_dir().expect("Error reading directory") {
@@ -215,8 +258,8 @@ fn get_files<'a>(p: &'a Path, recurse: bool) -> Vec<PathBuf> {
 
                 if fp.is_file() {
                     file_list.push(fp.to_path_buf())
-                } else if recurse && fp.is_dir() {
-                    let mut temp_list = get_files(&fp, recurse);
+                } else if *recurse && fp.is_dir() {
+                    let mut temp_list = retrieve_files(&fp, recurse);
                     file_list.append(&mut temp_list)
                 }
             }
@@ -229,17 +272,26 @@ fn get_files<'a>(p: &'a Path, recurse: bool) -> Vec<PathBuf> {
 
 #[cfg(test)]
 mod test {
+    use super::WarpFlag;
     use std::collections::{HashMap, HashSet};
     use std::fs;
+    use std::path::PathBuf;
 
-    #[test]
-    fn map_generation() {
+    fn teardown() {
         // create tmp directory
-        let p = "/tmp/warp_tests";
-        fs::create_dir_all(p).expect("couldn't create directory");
+        let p = PathBuf::from("/tmp/warp_tests");
+        fs::remove_dir_all(p).expect("couldn't remove directory");
+    }
+
+    fn setup() -> PathBuf {
+        // create tmp directory
+        let p = PathBuf::from("/tmp/warp_tests/p1");
+        let p2 = PathBuf::from("/tmp/warp_tests/p2");
+        fs::create_dir_all(&p).expect("couldn't create directory");
+        fs::create_dir_all(&p2).expect("couldn't create directory");
 
         // create tmp files
-        let f_set = [
+        let f_set: HashSet<String> = [
             "/tmp/warp_tests/file1.txt",
             "/tmp/warp_tests/file1.csv",
             "/tmp/warp_tests/file1.html",
@@ -247,11 +299,65 @@ mod test {
             "/tmp/warp_tests/file2.txt",
             "/tmp/warp_tests/file3.csv",
             "/tmp/warp_tests/file3.tex",
+            "/tmp/warp_tests/p1/file.tex",
+            "/tmp/warp_tests/p1/file.html",
+            "/tmp/warp_tests/p2/file.tex",
         ]
         .iter()
         .map(|x| x.to_string())
-        .collect::<HashSet<String>>();
+        .collect();
 
+        for file in f_set {
+            fs::write(file, "").expect("couldn't write empty file");
+        }
+
+        p
+    }
+
+    #[test]
+    fn map_generation() {
+        let p = setup().parent().unwrap().to_str().unwrap().to_string();
+        let v = vec![p];
         // test that map gets built properly with all files
+
+        // recursive false
+        let mut hm: HashMap<String, HashSet<String>> = HashMap::new();
+        let mut set: HashSet<String> = HashSet::new();
+        set.insert("txt".to_string());
+        set.insert("csv".to_string());
+        set.insert("html".to_string());
+        set.insert("tex".to_string());
+        hm.insert("/tmp/warp_tests/file1".to_string(), set);
+
+        let mut set: HashSet<String> = HashSet::new();
+        set.insert("txt".to_string());
+        hm.insert("/tmp/warp_tests/file2".to_string(), set);
+
+        let mut set: HashSet<String> = HashSet::new();
+        set.insert("csv".to_string());
+        set.insert("tex".to_string());
+        hm.insert("/tmp/warp_tests/file3".to_string(), set);
+
+        // perform test on map
+        let wfs: HashSet<WarpFlag> = HashSet::new();
+        let test_map = super::build_file_map(&v, &wfs);
+        assert_eq!(test_map, hm);
+
+        // recursive true
+        let mut set: HashSet<String> = HashSet::new();
+        set.insert("html".to_string());
+        set.insert("tex".to_string());
+        hm.insert("/tmp/warp_tests/p1/file".to_string(), set);
+
+        let mut set: HashSet<String> = HashSet::new();
+        set.insert("tex".to_string());
+        hm.insert("/tmp/warp_tests/p2/file".to_string(), set);
+
+        let mut wfs: HashSet<WarpFlag> = HashSet::new();
+        wfs.insert(WarpFlag::Recursive);
+        let test_map = super::build_file_map(&v, &wfs);
+        assert_eq!(test_map, hm);
+
+        teardown();
     }
 }
