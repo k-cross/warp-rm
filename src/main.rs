@@ -8,20 +8,12 @@ use std::path::{Path, PathBuf};
 #[derive(Hash, Eq, PartialEq)]
 enum WarpFlag {
     Recursive,
-    CaseSensitive,
-    EmptySource,
-    EmptyTarget,
+    Force,
     AndSource,
 }
 
 fn main() {
     // Dear reader, if you can make this prettier, I'd like to hear about it.
-    let help_sensitive = "Makes the extension list in both targets and sources case sensitive.
-As an example with targets `raw cr2` and sources `jpeg jpg`,
-this will remove `RAW`, `raw`, `Cr2` and all other combinations.
-Sources will match on all combinations too.
-";
-
     let help_and_sources = "Instead of applying an `or` match on sources, apply an `and` match.
 This means that all extensions are required to exist.
 Partial matches are considered incomplete and will be removed.
@@ -65,16 +57,16 @@ then any `raw`, `csv`, `jpg`, `gif`, or `exe` will be deleted.
         )
         // flags
         .arg(
+            Arg::with_name("force")
+                .short("f")
+                .long("force")
+                .help("Removal becomes non-interactive"),
+        )
+        .arg(
             Arg::with_name("recursive")
                 .short("r")
                 .long("recursive")
                 .help("Scans directories recursively"),
-        )
-        .arg(
-            Arg::with_name("case_sensitive")
-                .short("S")
-                .long("case-sensitive")
-                .help(help_sensitive),
         )
         .arg(
             Arg::with_name("empty_source_ext")
@@ -97,12 +89,12 @@ then any `raw`, `csv`, `jpg`, `gif`, or `exe` will be deleted.
         .get_matches();
 
     let mut warp_flags: HashSet<WarpFlag> = HashSet::new();
-    let targets: HashSet<String> = matches
+    let mut targets: HashSet<String> = matches
         .values_of("target_ext")
         .unwrap()
         .map(|x| String::from(x))
         .collect();
-    let sources: HashSet<String> = matches
+    let mut sources: HashSet<String> = matches
         .values_of("source_ext")
         .unwrap()
         .map(|x| String::from(x))
@@ -116,26 +108,25 @@ then any `raw`, `csv`, `jpg`, `gif`, or `exe` will be deleted.
     if matches.is_present("and_source_matches") {
         warp_flags.insert(WarpFlag::AndSource);
     }
+    if matches.is_present("force") {
+        warp_flags.insert(WarpFlag::Force);
+    }
     if matches.is_present("recursive") {
         warp_flags.insert(WarpFlag::Recursive);
     }
-    if matches.is_present("case_sensitive") {
-        warp_flags.insert(WarpFlag::CaseSensitive);
-    }
     if matches.is_present("empty_source_ext") {
-        warp_flags.insert(WarpFlag::EmptySource);
+        sources.insert("".to_string());
     }
     if matches.is_present("empty_target_ext") {
-        warp_flags.insert(WarpFlag::EmptyTarget);
+        targets.insert("".to_string());
     }
 
     let file_map = build_file_map(&target_paths, &warp_flags);
 
     if warp_flags.contains(&WarpFlag::AndSource) {
-        //remove_files_and(&file_map, &targets, &sources);
-        println!("not implemented");
+        remove_files_and(&file_map, &targets, &sources, &warp_flags);
     } else {
-        remove_files_or(&file_map, &targets, &sources);
+        remove_files_or(&file_map, &targets, &sources, &warp_flags);
     }
 }
 
@@ -143,7 +134,10 @@ fn remove_files_or(
     file_map: &HashMap<String, HashSet<String>>,
     targets: &HashSet<String>,
     sources: &HashSet<String>,
+    warp_flags: &HashSet<WarpFlag>,
 ) {
+    let mut files: Vec<PathBuf> = Vec::new();
+
     for (path_stem, exts) in file_map {
         let mut s = String::from(path_stem);
 
@@ -158,16 +152,23 @@ fn remove_files_or(
 
             for ext in existing_exts {
                 let full_path = if ext.is_empty() {
-                    Path::new(s.as_str())
+                    PathBuf::from(s.as_str())
                 } else {
                     s.push('.');
                     s.push_str(ext.as_str());
-                    Path::new(s.as_str())
+                    PathBuf::from(s.as_str())
                 };
 
-                fs::remove_file(full_path).expect("failed to delete file");
+                println!("{}", &full_path.to_str().unwrap());
+                files.push(full_path);
             }
         }
+    }
+
+    if files.is_empty() {
+        println!("Nothing to delete");
+    } else {
+        actually_remove_files(&files, warp_flags.contains(&WarpFlag::Force));
     }
 }
 
@@ -184,11 +185,70 @@ fn check_removal_or(exts: &HashSet<String>, sources: &HashSet<String>) -> bool {
     result
 }
 
+fn remove_files_and(
+    file_map: &HashMap<String, HashSet<String>>,
+    targets: &HashSet<String>,
+    sources: &HashSet<String>,
+    warp_flags: &HashSet<WarpFlag>,
+) {
+    let mut files: Vec<PathBuf> = Vec::new();
+
+    for (path_stem, exts) in file_map {
+        let mut s = String::from(path_stem);
+
+        if !sources.is_subset(&exts) {
+            let existing_exts: HashSet<String> = targets
+                .union(sources)
+                .map(|x| String::from(x))
+                .collect::<HashSet<String>>()
+                .intersection(&exts)
+                .map(|x| String::from(x))
+                .collect::<HashSet<String>>();
+
+            for ext in existing_exts {
+                let full_path = if ext.is_empty() {
+                    PathBuf::from(s.as_str())
+                } else {
+                    s.push('.');
+                    s.push_str(ext.as_str());
+                    PathBuf::from(s.as_str())
+                };
+
+                println!("{}", &full_path.to_str().unwrap());
+                files.push(full_path);
+            }
+        }
+    }
+
+    if files.is_empty() {
+        println!("Nothing to delete");
+    } else {
+        actually_remove_files(&files, warp_flags.contains(&WarpFlag::Force));
+    }
+}
+
+fn actually_remove_files(files: &Vec<PathBuf>, force: bool) {
+    println!("Do you really want to remove all the listed files? [y/n]");
+    let mut input = String::new();
+    if force {
+        input.push('y');
+    } else {
+        std::io::stdin()
+            .read_line(&mut input)
+            .expect("couldn't read input");
+    }
+
+    if input.trim() == "y" {
+        for file in files {
+            fs::remove_file(file).expect("failed to delete file");
+        }
+    }
+}
+
 fn build_file_map<'a>(
     target_paths: &'a Vec<String>,
     warp_flags: &'a HashSet<WarpFlag>,
 ) -> HashMap<String, HashSet<String>> {
-    // TODO: add multiple target paths later
     let file_list = get_files(&target_paths, warp_flags.contains(&WarpFlag::Recursive));
     let mut file_table: HashMap<String, HashSet<String>> = HashMap::new();
 
