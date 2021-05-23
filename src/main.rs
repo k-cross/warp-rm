@@ -122,11 +122,16 @@ then any `raw`, `csv`, `jpg`, `gif`, or `exe` will be deleted.
     }
 
     let file_map = build_file_map(&target_paths, &warp_flags);
-
-    if warp_flags.contains(&WarpFlag::AndSource) {
-        remove_files_and(&file_map, &targets, &sources, &warp_flags);
+    let files = if warp_flags.contains(&WarpFlag::AndSource) {
+        remove_files_and(&file_map, &targets, &sources)
     } else {
-        remove_files_or(&file_map, &targets, &sources, &warp_flags);
+        remove_files_or(&file_map, &targets, &sources)
+    };
+
+    if files.is_empty() {
+        println!("Nothing to delete");
+    } else {
+        actually_remove_files(&files, warp_flags.contains(&WarpFlag::Force));
     }
 }
 
@@ -134,12 +139,11 @@ fn remove_files_or(
     file_map: &HashMap<String, HashSet<String>>,
     targets: &HashSet<String>,
     sources: &HashSet<String>,
-    warp_flags: &HashSet<WarpFlag>,
-) {
+) -> Vec<PathBuf> {
     let mut files: Vec<PathBuf> = Vec::new();
 
     for (path_stem, exts) in file_map {
-        let mut s = String::from(path_stem);
+        let s = String::from(path_stem);
 
         if check_removal_or(&exts, &sources) {
             let existing_exts: HashSet<String> = targets
@@ -154,9 +158,7 @@ fn remove_files_or(
                 let full_path = if ext.is_empty() {
                     PathBuf::from(s.as_str())
                 } else {
-                    s.push('.');
-                    s.push_str(ext.as_str());
-                    PathBuf::from(s.as_str())
+                    PathBuf::from(format!("{}.{}", s, ext))
                 };
 
                 println!("{}", &full_path.to_str().unwrap());
@@ -165,11 +167,7 @@ fn remove_files_or(
         }
     }
 
-    if files.is_empty() {
-        println!("Nothing to delete");
-    } else {
-        actually_remove_files(&files, warp_flags.contains(&WarpFlag::Force));
-    }
+    files
 }
 
 fn check_removal_or(exts: &HashSet<String>, sources: &HashSet<String>) -> bool {
@@ -189,18 +187,14 @@ fn remove_files_and(
     file_map: &HashMap<String, HashSet<String>>,
     targets: &HashSet<String>,
     sources: &HashSet<String>,
-    warp_flags: &HashSet<WarpFlag>,
-) {
+) -> Vec<PathBuf> {
     let mut files: Vec<PathBuf> = Vec::new();
 
     for (path_stem, exts) in file_map {
-        let mut s = String::from(path_stem);
+        let s = String::from(path_stem);
 
         if !sources.is_subset(&exts) {
             let existing_exts: HashSet<String> = targets
-                .union(sources)
-                .map(|x| String::from(x))
-                .collect::<HashSet<String>>()
                 .intersection(&exts)
                 .map(|x| String::from(x))
                 .collect::<HashSet<String>>();
@@ -209,9 +203,7 @@ fn remove_files_and(
                 let full_path = if ext.is_empty() {
                     PathBuf::from(s.as_str())
                 } else {
-                    s.push('.');
-                    s.push_str(ext.as_str());
-                    PathBuf::from(s.as_str())
+                    PathBuf::from(format!("{}.{}", s, ext))
                 };
 
                 println!("{}", &full_path.to_str().unwrap());
@@ -220,11 +212,7 @@ fn remove_files_and(
         }
     }
 
-    if files.is_empty() {
-        println!("Nothing to delete");
-    } else {
-        actually_remove_files(&files, warp_flags.contains(&WarpFlag::Force));
-    }
+    files
 }
 
 fn actually_remove_files(files: &Vec<PathBuf>, force: bool) {
@@ -338,9 +326,9 @@ mod test {
     use std::path::PathBuf;
 
     fn teardown() {
-        // create tmp directory
+        // remove tmp directory
         let p = PathBuf::from("/tmp/warp_tests");
-        fs::remove_dir_all(p).expect("couldn't remove directory");
+        let _ = fs::remove_dir_all(p);
     }
 
     fn setup() -> PathBuf {
@@ -352,6 +340,7 @@ mod test {
 
         // create tmp files
         let f_set: HashSet<String> = [
+            "/tmp/warp_tests/file1",
             "/tmp/warp_tests/file1.txt",
             "/tmp/warp_tests/file1.csv",
             "/tmp/warp_tests/file1.html",
@@ -383,6 +372,7 @@ mod test {
         // recursive false
         let mut hm: HashMap<String, HashSet<String>> = HashMap::new();
         let mut set: HashSet<String> = HashSet::new();
+        set.insert("".to_string());
         set.insert("txt".to_string());
         set.insert("csv".to_string());
         set.insert("html".to_string());
@@ -417,6 +407,58 @@ mod test {
         wfs.insert(WarpFlag::Recursive);
         let test_map = super::build_file_map(&v, &wfs);
         assert_eq!(test_map, hm);
+
+        teardown();
+    }
+
+    #[test]
+    fn file_removal() {
+        let p = setup().parent().unwrap().to_str().unwrap().to_string();
+        let mut wfs: HashSet<WarpFlag> = HashSet::new();
+        wfs.insert(WarpFlag::Recursive);
+        let test_map = super::build_file_map(&vec![p], &wfs);
+
+        let expected_files: HashSet<PathBuf> = vec![
+            "/tmp/warp_tests/p1/file.tex",
+            "/tmp/warp_tests/p1/file.html",
+            "/tmp/warp_tests/p2/file.tex",
+        ]
+        .iter()
+        .map(|x| PathBuf::from(x))
+        .collect();
+
+        let sources: HashSet<String> = ["csv", "txt"]
+            .iter()
+            .cloned()
+            .map(|x| String::from(x))
+            .collect();
+        let targets: HashSet<String> = ["tex", "html"]
+            .iter()
+            .cloned()
+            .map(|x| String::from(x))
+            .collect();
+        let actual_files: HashSet<PathBuf> = super::remove_files_or(&test_map, &targets, &sources)
+            .iter()
+            .cloned()
+            .collect();
+
+        assert_eq!(actual_files, expected_files);
+
+        let actual_files: HashSet<PathBuf> = super::remove_files_and(&test_map, &targets, &sources)
+            .iter()
+            .cloned()
+            .collect();
+        let expected_files: HashSet<PathBuf> = vec![
+            "/tmp/warp_tests/file3.tex",
+            "/tmp/warp_tests/p1/file.tex",
+            "/tmp/warp_tests/p1/file.html",
+            "/tmp/warp_tests/p2/file.tex",
+        ]
+        .iter()
+        .map(|x| PathBuf::from(x))
+        .collect();
+
+        assert_eq!(actual_files, expected_files);
 
         teardown();
     }
